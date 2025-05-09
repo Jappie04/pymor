@@ -216,7 +216,7 @@ def apply_inverse(op, V, initial_guess=None, options=None, least_squares=False, 
     promoted_type = np.promote_types(matrix.dtype, V.dtype)
 
     if options['type'] == 'scipy_bicgstab':
-        R = np.empty((matrix.shape[1], len(V)), dtype=promoted_type, order='F')
+        R = np.empty((matrix.shape[1], V.shape[1]), dtype=promoted_type, order='F')
         for i in range(V.shape[1]):
             if SCIPY_1_14_OR_NEWER:
                 R[:, i], info = bicgstab(matrix, V[:, i], initial_guess[:, i] if initial_guess is not None else None,
@@ -230,7 +230,7 @@ def apply_inverse(op, V, initial_guess=None, options=None, least_squares=False, 
                 else:
                     raise InversionError(f'bicgstab failed with error code {info} (illegal input or breakdown)')
     elif options['type'] == 'scipy_bicgstab_spilu':
-        R = np.empty((matrix.shape[1], len(V)), dtype=promoted_type, order='F')
+        R = np.empty((matrix.shape[1], V.shape[1]), dtype=promoted_type, order='F')
         ilu = spilu(matrix, drop_tol=options['spilu_drop_tol'], fill_factor=options['spilu_fill_factor'],
                     drop_rule=options['spilu_drop_rule'], permc_spec=options['spilu_permc_spec'])
         precond = LinearOperator(matrix.shape, ilu.solve)
