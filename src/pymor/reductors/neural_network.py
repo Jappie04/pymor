@@ -388,12 +388,13 @@ class NeuralNetworkReductor(BasicObject):
 
     def _build_rom(self):
         """Construct the reduced order model."""
+        projected_output_functional = None
         if self.fom:
-            projected_output_functional = project(self.fom.output_functional, None, self.reduced_basis)
+            if hasattr(self.fom, 'output_functional'):
+                projected_output_functional = project(self.fom.output_functional, None, self.reduced_basis)
             parameters = self.fom.parameters
             name = self.fom.name
         else:
-            projected_output_functional = None
             parameters = self.training_set[0][0].parameters()
             name = 'data_driven'
 
