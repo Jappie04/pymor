@@ -6,6 +6,8 @@ from pymor.models.symplectic import BaseQuadraticHamiltonianModel
 from pymor.operators.numpy import NumpyMatrixOperator
 from pymor.vectorarrays.numpy import NumpyVectorSpace, NumpyVectorArray
 from pymor.vectorarrays.block import BlockVectorSpace
+from pymor.operators.constructions import ConcatenationOperator, IdentityOperator, InverseOperator
+
 
 
 class PHReductor():
@@ -26,10 +28,16 @@ class PHReductor():
 
         print("checking biorthogonality of POD_PH", np.linalg.norm((np.identity(len(V_r)) - (W_r.inner(V_r)))))
 
+        projection_matrix = V_r.gramian()
+        projection_op = NumpyMatrixOperator(projection_matrix)
+        inverse_projection_op = InverseOperator(projection_op, 'inverse_projection_op')
+        pid = project(fom.initial_data, range_basis=V_r, source_basis=None)
+        projected_initial_data = ConcatenationOperator([inverse_projection_op, pid])
+
         projected_operators = {
                     'H_op':              project(fom.H_op, V_r, V_r),
                     'h':                 project(fom.h, V_r, None),
-                    'initial_data':      NumpyMatrixOperator(W_r.inner(fom.initial_data.as_vector())),
+                    'initial_data':      projected_initial_data,
                     'J':                 project(CanonicalSymplecticFormOperator(fom.H_op.source), W_r, W_r)
                 }
         
