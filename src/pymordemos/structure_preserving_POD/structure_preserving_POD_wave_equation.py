@@ -21,19 +21,27 @@ from pymor.algorithms.PH import POD_PH, check_POD, POD_new
 NEW_METHODS = [] + ['POD_PH'] #+ ['POD_PH_just_Vr']#+ ['POD_new']
 METHODS = NEW_METHODS + ['POD', 'check_POD']
 
-folder_name = "src/pymordemos/structure_preserving_POD/results"
+folder_name = "results"
 
+print("Current working directory:", os.getcwd())
 
 os.makedirs(folder_name, exist_ok=True)
+
+
+def SaveFile(data, fileName, folder):
+    np.savetxt(os.path.join(folder, fileName), data)
+
 
 def main(
         final_time: float = 10.,
         rbsize: int = 80,        
 ):
     fom = discretize_fom(T=final_time)
+    # fom = discretize_mass_spring_chain()
     X = fom.solve()
     F = fom.operator.apply(X)
     rel_fac = np.sqrt(X.norm2().sum())
+    print("mass?", fom.mass)
 
     half_rbsize = min(rbsize // 2, len(X) // 2)
     red_dims = np.linspace(0, half_rbsize, 10, dtype=int)
@@ -129,11 +137,13 @@ def run_mor(fom, X, F, method, red_dims):
         if method in NEW_METHODS:
             if method == "POD_PH":
                 W_r = max_W_r[:red_dim]
+                print("POD_PH", len(V_r))
                 reductor = StructurePreservingPODReductor(fom, V_r, W_r)
+                print("X shape, W_r shape", X.dim, len(X), W_r.dim, len(W_r))
                 U_proj = V_r.lincomb(W_r.inner(X))
             elif method == 'POD_PH_just_Vr':
                 W_r = max_W_r[:red_dim]
-                reductor = StructurePresservingPODReductor_changedLHS(fom, V_r, V_r)
+                reductor = check_PODReductor(fom, V_r, V_r)
                 U_proj = V_r.lincomb(V_r.inner(X))
             elif method == 'POD_new':
                 W_r = max_W_r[:red_dim]
@@ -143,14 +153,15 @@ def run_mor(fom, X, F, method, red_dims):
             if method == "POD":
                 V_r = max_V_r[:red_dim]
                 W_r = V_r
-                reductor = InstationaryRBReductor(fom, V_r)
+                reductor = check_PODReductor(fom, V_r, W_r)
                 U_proj = V_r.lincomb(V_r.inner(X))
             elif method == 'check_POD':
                 V_r = max_V_r[:red_dim]
                 W_r = V_r
-                reductor = StructurePresservingPODReductor_changedLHS(fom, V_r, V_r)
+                reductor = StructurePreservingPODReductor(fom, V_r, V_r)
                 U_proj = V_r.lincomb(V_r.inner(X))
         rom  = reductor.reduce()
+        print(len(fom.initial_data.as_vector()), fom.initial_data.as_vector().dim)
         abs_err_initial_data[i_red_dim] = np.sqrt((fom.initial_data.as_vector() - V_r.lincomb(rom.initial_data.as_vector().to_numpy())).norm2())
         u = rom.solve()
         
@@ -165,6 +176,7 @@ def run_mor(fom, X, F, method, red_dims):
         filename2 = f"reconstruction_q_{method}_{red_dim}.txt"
         # np.savetxt(os.path.join(folder_name, filename1), Hamiltonian_reconstruction[:998])
         # np.savetxt(os.path.join(folder_name, filename2), numpy_reconstruction[:, :998])
+        print("shape?",numpy_reconstruction.shape, Hamiltonian_reconstruction.shape)
         # np.savetxt(f"Hamiltonian_reconstruction_{method}_{red_dim}.txt", Hamiltonian_reconstruction)
         # np.savetxt(f"reconstruction_q_{method}_{red_dim}.txt", numpy_reconstruction)
         if red_dim == 60 and method == 'POD_PH':
@@ -223,11 +235,13 @@ def discretize_fom(T=50):
     wave_speed = 0.1
     l = 1.
     dx = l / (n_x-1)
+    print(nt)
     t = np.arange(0, int(T), 0.01)
     t = np.delete(t, 999)
     t = np.delete(t, 998)
     filename = "time.txt"
     # np.savetxt(os.path.join(folder_name, filename), t)
+    print("t shape?", t.shape)
     # construct H_op
     space = NumpyVectorSpace(n_x)
     Dxx = diags(
@@ -252,6 +266,52 @@ def discretize_fom(T=50):
     # TODO: fom.operator = fom.operator.with_(solver_options={'type': 'to_matrix'})
     return fom
 
+
+
+def discretize_mass_spring_chain(T=10, n=100, k=1.0, m=1.0):
+    """
+    Discretizes a finite mass-spring chain as a linear Hamiltonian system.
+
+    Parameters:
+    - T: final time
+    - n: number of masses (degrees of freedom)
+    - k: spring stiffness
+    - m: mass
+
+    Returns:
+    - fom: QuadraticHamiltonianModel
+    """
+    dt = 0.01
+    nt = int(T / dt) + 1
+
+    space = NumpyVectorSpace(n)
+
+    # Mass matrix M and stiffness matrix K (simple 1D second difference with Dirichlet BCs)
+    K = diags(
+        [2 * np.ones(n), -1 * np.ones(n - 1), -1 * np.ones(n - 1)],
+        [0, -1, 1],
+        format='csr'
+    )
+
+    M_inv = IdentityOperator(space) * (1.0 / m)  # constant mass matrix inverse
+
+    # Construct Hamiltonian operator (block diagonal)
+    H_op = BlockDiagonalOperator([
+        NumpyMatrixOperator(k * K),  # potential energy (K q)
+        M_inv,                       # kinetic energy (M^{-1} p)
+    ])
+
+    # Initial data: small displacement in the middle mass, zero momentum
+    initial_disp = np.zeros(n)
+    initial_disp[n // 2] = 1.0  # impulse at center
+
+    initial_data = H_op.source.make_array([
+        space.make_array(initial_disp),   # q
+        space.make_array(np.zeros(n)),    # p
+    ])
+
+    fom = QuadraticHamiltonianModel(T, initial_data, H_op, nt=nt, name='mass_spring_chain')
+    return fom
 
 if __name__ == "__main__":
     main()
