@@ -12,13 +12,17 @@ from pymor.operators.constructions import IdentityOperator, LincombOperator
 from pymor.operators.numpy import NumpyMatrixOperator
 from pymor.vectorarrays.numpy import NumpyVectorSpace
 from pymor.models.symplectic import QuadraticHamiltonianModel
+from pymor.reductors.symplectic import QuadraticHamiltonianRBReductor
 from scipy.sparse import diags
 
 from pymor.reductors.reductor_PH import check_PODReductor, StructurePreservingPODReductor, StructurePreservingPODReductor_changedLHS
 from pymor.algorithms.PH import POD_PH, check_POD, POD_new, POD_and_canonical_base
+from pymor.algorithms.symplectic import psd_cotangent_lift
 
-NEW_METHODS = [] + ['POD_PH'] + ['canonical base'] #+ ['POD_PH_just_Vr']#+ ['POD_new']
-METHODS = NEW_METHODS + ['POD', 'check_POD']
+NEW_METHODS = [] + ['POD_PH'] + ['canonical_base'] #+ ['POD_PH_just_Vr']#+ ['POD_new']
+SYMPLECTIC_METHODS = ['cotangent_lift']
+METHODS = NEW_METHODS + ['POD', 'check_POD'] + SYMPLECTIC_METHODS
+
 
 METHOD_TO_TRY = StructurePreservingPODReductor
 
@@ -45,21 +49,22 @@ def main(
             red_dims[i_red_dim] -= 1
     red_dims = red_dims * 2
 
-    # np.savetxt(os.path.join(folder_name, "red_dims"), red_dims)
+    np.savetxt(os.path.join(folder_name, "red_dims"), red_dims)
+    np.savetxt(os.path.join(folder_name, "methods_used"), METHODS, fmt='%s')
 
     results = {}
     for method in METHODS:
         results[method] = run_mor(fom, X, F, method, red_dims)
-        
 
     fig, axs = plt.subplots(1, 3, sharey=True, sharex=True)
     markers = {
         'POD_PH': "o",
         'POD': '^',
         'check_POD': 'x',
+        'cotangent_lift': '.',
         'POD_PH_just_Vr': '.',
         'POD_new': ',',
-        'canonical base': '>'
+        'canonical_base': '>'
     }
     colors = {
         'POD_PH': 'green',
@@ -67,18 +72,23 @@ def main(
         'check_POD': 'pink',
         'POD_PH_just_Vr': 'red',
         'POD_new': 'yellow',
-        'canonical base': 'tomato'
+        'canonical_base': 'tomato',
+        'cotangent_lift': 'red'
     }
     for method, results in results.items():
+        relative_projection_error = results['abs_err_proj'] / rel_fac
+        relative_reduction_error = results['abs_err_rom'] / rel_fac
+        np.savetxt(os.path.join(folder_name, f"relative_projection_error_{method}"), relative_projection_error)
+        np.savetxt(os.path.join(folder_name, f"relative_reduction_error_{method}"), relative_reduction_error)
         axs[0].semilogy(
             red_dims,
-            results['abs_err_proj'] / rel_fac,
+            relative_projection_error,
             marker=markers[method],
             color=colors[method]
         )
         axs[1].semilogy(
             red_dims,
-            results['abs_err_rom'] / rel_fac,
+            relative_reduction_error,
             marker=markers[method],
             color=colors[method],
         )
@@ -112,8 +122,11 @@ def run_mor(fom, X, F, method, red_dims):
             max_V_r, max_W_r = POD_PH(X, F, max_red_dim, 2)
         elif method == 'POD_new':
             max_V_r, max_W_r = POD_new(X, max_red_dim, 2)
-        elif method == 'canonical base':
+        elif method == 'canonical_base':
             max_V_r, max_W_r = POD_and_canonical_base(X, max_red_dim)
+    elif method in SYMPLECTIC_METHODS:
+        if method == 'cotangent_lift':
+            max_V_r = psd_cotangent_lift(X, max_red_dim)
     else:
         if method == 'check_POD':
             max_V_r = check_POD(X, max_red_dim)
@@ -123,13 +136,16 @@ def run_mor(fom, X, F, method, red_dims):
     abs_err_proj = np.zeros(len(red_dims))
     abs_err_rom = np.zeros(len(red_dims))
     abs_err_initial_data = np.zeros(len(red_dims))
+    red_dims_used = np.array([])
     for i_red_dim, red_dim in enumerate(red_dims):
         print(method)
-        if red_dim > len(max_V_r):
+        if red_dim > len(max_V_r) * (2 if method in SYMPLECTIC_METHODS else 1):
             abs_err_proj[i_red_dim] = np.nan
             abs_err_rom[i_red_dim] = np.nan
             abs_err_initial_data[i_red_dim] = np.nan
             continue
+        else:
+            red_dims_used = np.append(red_dims_used, int(red_dim))
         V_r = max_V_r[:red_dim]
         if method in NEW_METHODS:
             if method == "POD_PH":
@@ -144,10 +160,16 @@ def run_mor(fom, X, F, method, red_dims):
                 W_r = max_W_r[:red_dim]
                 reductor = METHOD_TO_TRY(fom, V_r, W_r)
                 U_proj = V_r.lincomb(W_r.inner(X))
-            elif method == 'canonical base':
+            elif method == 'canonical_base':
                 W_r = max_W_r[:red_dim]
                 reductor = METHOD_TO_TRY(fom, V_r, W_r)
                 U_proj = V_r.lincomb(W_r.inner(X))
+        elif method in SYMPLECTIC_METHODS:
+            if method == 'cotangent_lift':
+                V_r = max_V_r[:red_dim//2]
+                reductor = QuadraticHamiltonianRBReductor(fom, V_r)
+                RB_tsi = V_r.transposed_symplectic_inverse()
+                U_proj = V_r.lincomb(X.inner(RB_tsi.to_array()).T)
         else:
             if method == "POD":
                 V_r = max_V_r[:red_dim]
@@ -171,10 +193,8 @@ def run_mor(fom, X, F, method, red_dims):
 
             filename1 = f"Hamiltonian_reconstruction_{method}_{red_dim}.txt"
             filename2 = f"reconstruction_q_{method}_{red_dim}.txt"
-            # np.savetxt(os.path.join(folder_name, filename1), Hamiltonian_reconstruction[:998])
-            # np.savetxt(os.path.join(folder_name, filename2), numpy_reconstruction[:, :998])
-            # np.savetxt(f"Hamiltonian_reconstruction_{method}_{red_dim}.txt", Hamiltonian_reconstruction)
-            # np.savetxt(f"reconstruction_q_{method}_{red_dim}.txt", numpy_reconstruction)
+            np.savetxt(os.path.join(folder_name, filename1), Hamiltonian_reconstruction[:998])
+            np.savetxt(os.path.join(folder_name, filename2), numpy_reconstruction[:, :998])
             if red_dim == 60 and method == 'POD_PH':
                 fig2, ax2 = plt.subplots()
                 numpy_reconstruction = (reconstruction.blocks[0]).to_numpy()
@@ -205,7 +225,7 @@ def run_mor(fom, X, F, method, red_dims):
             abs_err_rom[i_red_dim] = np.sqrt((X - reconstruction).norm2().sum())
         except:
             print(f"Could not solve u for {method}, {red_dim}")
-
+    np.savetxt(os.path.join(folder_name, f"red_dims_used_{method}"), red_dims_used)
     return {
         'abs_err_proj': abs_err_proj,
         'abs_err_rom': abs_err_rom,
@@ -236,7 +256,7 @@ def discretize_fom(T=50):
     t = np.delete(t, 999)
     t = np.delete(t, 998)
     filename = "time.txt"
-    # np.savetxt(os.path.join(folder_name, filename), t)
+    np.savetxt(os.path.join(folder_name, filename), t)
     # construct H_op
     space = NumpyVectorSpace(n_x)
     Dxx = diags(
