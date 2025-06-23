@@ -194,7 +194,7 @@ def run_mor(fom, X, F, method, red_dims):
             filename1 = f"Hamiltonian_reconstruction_{method}_{red_dim}.txt"
             filename2 = f"reconstruction_q_{method}_{red_dim}.txt"
             np.savetxt(os.path.join(folder_name, filename1), Hamiltonian_reconstruction[:998])
-            np.savetxt(os.path.join(folder_name, filename2), numpy_reconstruction[:, :998])
+            np.savetxt(os.path.join(folder_name, filename2), numpy_reconstruction)
             if red_dim == 60 and method == 'POD_PH':
                 fig2, ax2 = plt.subplots()
                 numpy_reconstruction = (reconstruction.blocks[0]).to_numpy()
