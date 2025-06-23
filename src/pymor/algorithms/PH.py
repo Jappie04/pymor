@@ -13,7 +13,7 @@ def biorthogonalize(Vtilde_r, Wtilde_r, method):
     Vtilde_r = Vtilde_r[:max_modes]
     Wtilde_r = Wtilde_r[:max_modes]
     if method == 1:
-        V_r, W_r = biorth_my_method(Vtilde_r, Wtilde_r, X.dim // 2)
+        V_r, W_r = biorth_my_method(Vtilde_r, Wtilde_r, Vtilde_r.dim // 2)
     elif method == 2:
         V_r, W_r = gram_schmidt_biorth(Vtilde_r, Wtilde_r)
     return V_r, W_r
@@ -60,16 +60,22 @@ def biorth_my_method(Vtilde_r, Wtilde_r, half_dim):
     return V_r, W_r
 
 def check_POD(X, modes):
-    """given snapshot matrix X and force snapshot matrix F
-    get a POD basis of X and F, Vtilde_r and Wtilde_r
-    change the bases so that they are biorthogonal, V_r and W_r
-    return the bases V_r and W_r
-    
-    based on algorithm 1 in Chaturantabut/Beattie/Gugercing
-    """
-    
     Vtilde_r, svals = pod(X, modes=modes)
 
     return Vtilde_r
+
+
+def POD_and_canonical_base(X, modes):
+    Vtilde_r, svals = pod(X, modes=modes)
+
+    space = Vtilde_r.space
+    numpy_vector_ones = np.zeros(Vtilde_r.dim)
+    Wtilde_r = space.empty()
+    for i in range(len(Vtilde_r)):
+        numpy_vector_ones[i-1] = 0
+        numpy_vector_ones[i] = 1
+        Wtilde_r.append(space.from_numpy(numpy_vector_ones))
+
+    return Vtilde_r, Wtilde_r
 
 

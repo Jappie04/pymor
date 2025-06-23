@@ -2,7 +2,6 @@ import numpy as np
 from matplotlib import pyplot as plt
 import os
 
-# from pymordemos.symplectic_wave_equation import discretize_fom
 from pymor.vectorarrays.numpy import NumpyVectorSpace
 from pymor.algorithms.pod import pod
 from pymor.reductors.basic import InstationaryRBReductor
@@ -15,11 +14,14 @@ from pymor.vectorarrays.numpy import NumpyVectorSpace
 from pymor.models.symplectic import QuadraticHamiltonianModel
 from scipy.sparse import diags
 
-from pymor.reductors.reductor_PH import check_PODReductor, StructurePreservingPODReductor, StructurePresservingPODReductor_changedLHS
-from pymor.algorithms.PH import POD_PH, check_POD, POD_new
+from pymor.reductors.reductor_PH import check_PODReductor, StructurePreservingPODReductor, StructurePreservingPODReductor_changedLHS
+from pymor.algorithms.PH import POD_PH, check_POD, POD_new, POD_and_canonical_base
 
-NEW_METHODS = [] + ['POD_PH'] #+ ['POD_PH_just_Vr']#+ ['POD_new']
+NEW_METHODS = [] + ['POD_PH'] + ['canonical base'] #+ ['POD_PH_just_Vr']#+ ['POD_new']
 METHODS = NEW_METHODS + ['POD', 'check_POD']
+
+METHOD_TO_TRY = StructurePreservingPODReductor
+
 
 folder_name = "src/pymordemos/structure_preserving_POD/results"
 
@@ -34,6 +36,7 @@ def main(
     X = fom.solve()
     F = fom.operator.apply(X)
     rel_fac = np.sqrt(X.norm2().sum())
+
 
     half_rbsize = min(rbsize // 2, len(X) // 2)
     red_dims = np.linspace(0, half_rbsize, 10, dtype=int)
@@ -55,14 +58,16 @@ def main(
         'POD': '^',
         'check_POD': 'x',
         'POD_PH_just_Vr': '.',
-        'POD_new': ','
+        'POD_new': ',',
+        'canonical base': '>'
     }
     colors = {
         'POD_PH': 'green',
         'POD': 'blue',
         'check_POD': 'pink',
         'POD_PH_just_Vr': 'red',
-        'POD_new': 'yellow'
+        'POD_new': 'yellow',
+        'canonical base': 'tomato'
     }
     for method, results in results.items():
         axs[0].semilogy(
@@ -84,8 +89,8 @@ def main(
             color=colors[method],
             label=method
         )
-
-    fig.suptitle('mass matrix numpy way')
+    
+    fig.suptitle(f'{METHOD_TO_TRY.__name__}')
     axs[0].title.set_text('Relative projection error')
     axs[1].title.set_text('Relative reduction error')
     axs[2].title.set_text('Initial data error')
@@ -95,8 +100,6 @@ def main(
 
     plt.legend()
     plt.show()
-
-
 
 
 def run_mor(fom, X, F, method, red_dims):
@@ -109,6 +112,8 @@ def run_mor(fom, X, F, method, red_dims):
             max_V_r, max_W_r = POD_PH(X, F, max_red_dim, 2)
         elif method == 'POD_new':
             max_V_r, max_W_r = POD_new(X, max_red_dim, 2)
+        elif method == 'canonical base':
+            max_V_r, max_W_r = POD_and_canonical_base(X, max_red_dim)
     else:
         if method == 'check_POD':
             max_V_r = check_POD(X, max_red_dim)
@@ -129,15 +134,19 @@ def run_mor(fom, X, F, method, red_dims):
         if method in NEW_METHODS:
             if method == "POD_PH":
                 W_r = max_W_r[:red_dim]
-                reductor = StructurePreservingPODReductor(fom, V_r, W_r)
+                reductor = METHOD_TO_TRY(fom, V_r, W_r)
                 U_proj = V_r.lincomb(W_r.inner(X))
             elif method == 'POD_PH_just_Vr':
                 W_r = max_W_r[:red_dim]
-                reductor = StructurePresservingPODReductor_changedLHS(fom, V_r, V_r)
+                reductor = METHOD_TO_TRY(fom, V_r, V_r)
                 U_proj = V_r.lincomb(V_r.inner(X))
             elif method == 'POD_new':
                 W_r = max_W_r[:red_dim]
-                reductor = check_PODReductor(fom, V_r, W_r)
+                reductor = METHOD_TO_TRY(fom, V_r, W_r)
+                U_proj = V_r.lincomb(W_r.inner(X))
+            elif method == 'canonical base':
+                W_r = max_W_r[:red_dim]
+                reductor = METHOD_TO_TRY(fom, V_r, W_r)
                 U_proj = V_r.lincomb(W_r.inner(X))
         else:
             if method == "POD":
@@ -148,53 +157,54 @@ def run_mor(fom, X, F, method, red_dims):
             elif method == 'check_POD':
                 V_r = max_V_r[:red_dim]
                 W_r = V_r
-                reductor = StructurePresservingPODReductor_changedLHS(fom, V_r, V_r)
+                reductor = check_PODReductor(fom, V_r, V_r)
                 U_proj = V_r.lincomb(V_r.inner(X))
         rom  = reductor.reduce()
         abs_err_initial_data[i_red_dim] = np.sqrt((fom.initial_data.as_vector() - V_r.lincomb(rom.initial_data.as_vector().to_numpy())).norm2())
-        u = rom.solve()
-        
-
-        x_axis = np.arange(0, 1, 0.001)
-        numpy_X = (X.blocks[0]).to_numpy()
-        reconstruction = V_r.lincomb(u.to_numpy())
-        Hamiltonian_reconstruction = fom.eval_hamiltonian(reconstruction)
-        numpy_reconstruction = (reconstruction.blocks[0]).to_numpy()
-
-        filename1 = f"Hamiltonian_reconstruction_{method}_{red_dim}.txt"
-        filename2 = f"reconstruction_q_{method}_{red_dim}.txt"
-        # np.savetxt(os.path.join(folder_name, filename1), Hamiltonian_reconstruction[:998])
-        # np.savetxt(os.path.join(folder_name, filename2), numpy_reconstruction[:, :998])
-        # np.savetxt(f"Hamiltonian_reconstruction_{method}_{red_dim}.txt", Hamiltonian_reconstruction)
-        # np.savetxt(f"reconstruction_q_{method}_{red_dim}.txt", numpy_reconstruction)
-        if red_dim == 60 and method == 'POD_PH':
-            fig2, ax2 = plt.subplots()
+        try:
+            u = rom.solve()
+            x_axis = np.arange(0, 1, 0.001)
+            numpy_X = (X.blocks[0]).to_numpy()
+            reconstruction = V_r.lincomb(u.to_numpy())
+            Hamiltonian_reconstruction = fom.eval_hamiltonian(reconstruction)
             numpy_reconstruction = (reconstruction.blocks[0]).to_numpy()
-            for i in range(0, 1002, 50):
-                ax2.plot(numpy_X[:, i], color = "red")
-                ax2.plot(numpy_reconstruction[:, i], color = "blue")
-            plt.ylim(0, 1)
-            plt.title(f"method: {method}, number of modes: {red_dim}")
 
-        n_x = 500
-        wave_speed = 0.1
-        l = 1.
-        dx = l / (n_x-1)
-        if red_dim != 0:
-            ax1.plot(fom.eval_hamiltonian(X), color = "blue", marker = "o")
-            ax1.plot(fom.eval_hamiltonian(reconstruction), label = str(red_dim))
-            plt.legend()
-            plt.title(f"Hamiltonian, method: {method}")
-            ax1.set_ylabel("Hamiltonian")
-            # numpy_u = u.to_numpy()
-            # n = np.shape(numpy_u)[1]
-            # energy = np.zeros(n)
-            # for i in range(n):
-            #     energy[i] = compute_discretized_Hamiltonian(dx=dx, p=numpy_u[:4, i], q=numpy_u[4:, i], c=wave_speed)
-            # print("check energy computation", np.linalg.norm(reduced_Hamiltonian - energy))
+            filename1 = f"Hamiltonian_reconstruction_{method}_{red_dim}.txt"
+            filename2 = f"reconstruction_q_{method}_{red_dim}.txt"
+            # np.savetxt(os.path.join(folder_name, filename1), Hamiltonian_reconstruction[:998])
+            # np.savetxt(os.path.join(folder_name, filename2), numpy_reconstruction[:, :998])
+            # np.savetxt(f"Hamiltonian_reconstruction_{method}_{red_dim}.txt", Hamiltonian_reconstruction)
+            # np.savetxt(f"reconstruction_q_{method}_{red_dim}.txt", numpy_reconstruction)
+            if red_dim == 60 and method == 'POD_PH':
+                fig2, ax2 = plt.subplots()
+                numpy_reconstruction = (reconstruction.blocks[0]).to_numpy()
+                for i in range(0, 1002, 50):
+                    ax2.plot(numpy_X[:, i], color = "red")
+                    ax2.plot(numpy_reconstruction[:, i], color = "blue")
+                plt.ylim(0, 1)
+                plt.title(f"method: {method}, number of modes: {red_dim}")
 
-        abs_err_proj[i_red_dim] = np.sqrt((X - U_proj).norm2().sum())
-        abs_err_rom[i_red_dim] = np.sqrt((X - reconstruction).norm2().sum())
+            n_x = 500
+            wave_speed = 0.1
+            l = 1.
+            dx = l / (n_x-1)
+            if red_dim != 0:
+                ax1.plot(fom.eval_hamiltonian(X), color = "blue", marker = "o")
+                ax1.plot(fom.eval_hamiltonian(reconstruction), label = str(red_dim))
+                plt.legend()
+                plt.title(f"Hamiltonian, method: {method}")
+                ax1.set_ylabel("Hamiltonian")
+                # numpy_u = u.to_numpy()
+                # n = np.shape(numpy_u)[1]
+                # energy = np.zeros(n)
+                # for i in range(n):
+                #     energy[i] = compute_discretized_Hamiltonian(dx=dx, p=numpy_u[:4, i], q=numpy_u[4:, i], c=wave_speed)
+                # print("check energy computation", np.linalg.norm(reduced_Hamiltonian - energy))
+
+            abs_err_proj[i_red_dim] = np.sqrt((X - U_proj).norm2().sum())
+            abs_err_rom[i_red_dim] = np.sqrt((X - reconstruction).norm2().sum())
+        except:
+            print(f"Could not solve u for {method}, {red_dim}")
 
     return {
         'abs_err_proj': abs_err_proj,
@@ -214,7 +224,6 @@ def compute_discretized_Hamiltonian(dx, p, q, c):
         sum_q += (q[i] - q[i-1]) ** 2
     energy = (dx / 2) * sum_p + ((c ** 2) / (2 * dx))
     return energy
-
 
 
 def discretize_fom(T=50):

@@ -103,7 +103,7 @@ class StructurePreservingPODReductor(BasicObject):
         return self.RB[:u.dim//2].lincomb(u.to_numpy())
     
 
-class StructurePresservingPODReductor_changedLHS(BasicObject):
+class StructurePreservingPODReductor_changedLHS(BasicObject):
     def __init__(self, fom, V_r, W_r):
         self.fom = fom
         self.V_r = V_r
