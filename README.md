@@ -1,4 +1,10 @@
+My adaptation of
+
 ![pyMOR Logo](./logo/pymor_logo.svg)
+
+/src/pymordemos/structure_preserving_POD/SP_POD_wave_equation.py is the main file,
+/src/pymor/algorithms/SP_POD.py contains the methods to obtain the reduced bases V_r and W_r, and
+/src/pymor/reductors/SP_POD.py contains the reduction methods.
 
 [![PyPI](https://img.shields.io/pypi/pyversions/pymor.svg)](https://pypi.python.org/pypi/pymor)
 [![PyPI](https://img.shields.io/pypi/v/pymor.svg)](https://pypi.python.org/pypi/pymor)
