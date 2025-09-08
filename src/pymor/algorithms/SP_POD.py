@@ -7,6 +7,60 @@ from pymor.vectorarrays.block import BlockVectorSpace
 
 import copy
 
+def SP_POD(X, F, modes, method):
+    """given snapshot matrix X and force snapshot matrix F
+    get a POD basis of X and F, Vtilde_r and Wtilde_r
+    change the bases so that they are biorthogonal, V_r and W_r
+    return the bases V_r and W_r
+    
+    based on algorithm 1 in Chaturantabut/Beattie/Gugercing
+    """
+    
+    Vtilde_r, svals = pod(X, modes=modes)
+    Wtilde_r, svals = pod(F, modes=modes)
+    
+    V_r, W_r = biorthogonalize(Vtilde_r, Wtilde_r, method)
+    return V_r, W_r
+
+
+def check_POD(X, modes):
+    Vtilde_r, svals = pod(X, modes=modes)
+
+    return Vtilde_r
+
+
+def POD_new(X, modes, method):
+    half_dim = X.dim//2
+    X1, X2 = X.blocks[0], X.blocks[1]
+
+    Vtilde_r, _ = pod(X1, modes=modes)
+    Wtilde_r, _ = pod(X2, modes=modes)
+    
+    V_r, W_r = biorthogonalize(Vtilde_r=Vtilde_r, Wtilde_r=Wtilde_r, method=method)
+    return V_r, W_r
+
+def extended_POD(X, F, modes):
+    X1 = copy.deepcopy(X)
+    X1.append(F)
+    Vtilde_r, svals = pod(X1, modes=modes)
+
+    return Vtilde_r
+
+
+def POD_and_canonical_base(X, modes):
+    Vtilde_r, svals = pod(X, modes=modes)
+
+    space = Vtilde_r.space
+    numpy_vector_ones = np.zeros(Vtilde_r.dim)
+    Wtilde_r = space.empty()
+    for i in range(len(Vtilde_r)):
+        numpy_vector_ones[i-1] = 0
+        numpy_vector_ones[i] = 1
+        Wtilde_r.append(space.from_numpy(numpy_vector_ones))
+
+    return Vtilde_r, Wtilde_r
+
+
 
 def biorthogonalize(Vtilde_r, Wtilde_r, method):
     max_modes = min(len(Vtilde_r), len(Wtilde_r))
@@ -18,42 +72,6 @@ def biorthogonalize(Vtilde_r, Wtilde_r, method):
         V_r, W_r = biorth_my_method(Vtilde_r, Wtilde_r, Vtilde_r.dim // 2)
     elif method == 2:
         V_r, W_r = gram_schmidt_biorth(Vtilde_r, Wtilde_r)
-    return V_r, W_r
-
-
-def POD_PH(X, F, modes, method):
-    """given snapshot matrix X and force snapshot matrix F
-    get a POD basis of X and F, Vtilde_r and Wtilde_r
-    change the bases so that they are biorthogonal, V_r and W_r
-    return the bases V_r and W_r
-    
-    based on algorithm 1 in Chaturantabut/Beattie/Gugercing
-    """
-    
-    Vtilde_r, svals = pod(X, modes=modes)
-    Wtilde_r, svals = pod(F, modes=modes)
-
-    # max_modes = min(len(Vtilde_r), len(Wtilde_r))
-    # if max_modes % 2 != 0:
-    #     max_modes -= 1
-    # Vtilde_r = Vtilde_r[:max_modes]
-    # Wtilde_r = Wtilde_r[:max_modes]
-
-    # V_r, W_r = Vtilde_r, Wtilde_r
-    
-    V_r, W_r = biorthogonalize(Vtilde_r, Wtilde_r, method)
-
-    # print("check if V_r and W_r have full rank", np.linalg.matrix_rank(V_r.to_numpy()), np.linalg.matrix_rank(W_r.to_numpy()), V_r.to_numpy().shape)
-    return V_r, W_r
-
-def POD_new(X, modes, method):
-    half_dim = X.dim//2
-    X1, X2 = X.blocks[0], X.blocks[1]
-
-    Vtilde_r, _ = pod(X1, modes=modes)
-    Wtilde_r, _ = pod(X2, modes=modes)
-    
-    V_r, W_r = biorthogonalize(Vtilde_r=Vtilde_r, Wtilde_r=Wtilde_r, method=method)
     return V_r, W_r
 
 
@@ -70,32 +88,5 @@ def biorth_my_method(Vtilde_r, Wtilde_r, half_dim):
     W_r = space.from_numpy(numpy_W_r1)
 
     return V_r, W_r
-
-def check_POD(X, modes):
-    Vtilde_r, svals = pod(X, modes=modes)
-
-    return Vtilde_r
-
-def extended_POD(X, F, modes):
-    X1 = copy.deepcopy(X)
-    X1.append(F)
-    Vtilde_r, svals = pod(X1, modes=modes)
-
-    return Vtilde_r
-
-
-
-def POD_and_canonical_base(X, modes):
-    Vtilde_r, svals = pod(X, modes=modes)
-
-    space = Vtilde_r.space
-    numpy_vector_ones = np.zeros(Vtilde_r.dim)
-    Wtilde_r = space.empty()
-    for i in range(len(Vtilde_r)):
-        numpy_vector_ones[i-1] = 0
-        numpy_vector_ones[i] = 1
-        Wtilde_r.append(space.from_numpy(numpy_vector_ones))
-
-    return Vtilde_r, Wtilde_r
 
 

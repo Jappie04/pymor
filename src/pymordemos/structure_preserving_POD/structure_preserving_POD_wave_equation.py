@@ -15,8 +15,8 @@ from pymor.vectorarrays.numpy import NumpyVectorSpace
 from pymor.models.symplectic import QuadraticHamiltonianModel
 from scipy.sparse import diags
 
-from pymor.reductors.reductor_PH import check_PODReductor, StructurePreservingPODReductor, StructurePreservingPODReductor_changedLHS
-from pymor.algorithms.PH import POD_PH, check_POD, POD_new
+from pymor.reductors.SP_POD import check_PODReductor, StructurePreservingPODReductor, StructurePreservingPODReductor_changedLHS
+from pymor.algorithms.SP_POD import POD_PH, check_POD, POD_new
 
 NEW_METHODS = [] + ['POD_PH'] #+ ['POD_PH_just_Vr']#+ ['POD_new']
 METHODS = NEW_METHODS + ['POD', 'check_POD']
